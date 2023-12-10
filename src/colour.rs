@@ -1,4 +1,4 @@
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct Colour {
     pub red: usize,
     pub green: usize,
@@ -10,5 +10,13 @@ impl Colour {
         self.red += c.red;
         self.green += c.green;
         self.blue += c.blue;
+    }
+
+    pub fn from_rgba8(rgba8: [u8; 4]) -> Self {
+        Colour {
+            red: rgba8[0] as usize,
+            green: rgba8[1] as usize,
+            blue: rgba8[2] as usize,
+        }
     }
 }
