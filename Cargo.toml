@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 alsa = "0.8.1"
 colorgrad = "0.6.2"
+hound = "3.5.1"
 hsl = "0.1.1"
 image = "0.24.7"
 rand = "0.8.5"
