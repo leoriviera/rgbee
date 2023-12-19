@@ -1,3 +1,5 @@
+use hsl::HSL;
+
 #[derive(Clone, Default, Debug)]
 pub struct Colour {
     pub red: usize,
@@ -18,5 +20,11 @@ impl Colour {
             green: rgba8[1] as usize,
             blue: rgba8[2] as usize,
         }
+    }
+
+    pub fn from_hsl(c: HSL) -> Self { 
+        let (r, g, b) = c.to_rgb();
+
+        Colour::from_rgba8([r, g, b, 0])
     }
 }

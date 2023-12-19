@@ -6,10 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+alsa = "0.8.1"
 colorgrad = "0.6.2"
+hsl = "0.1.1"
 image = "0.24.7"
 rand = "0.8.5"
-rgb = "0.8.37"
 rs_ws281x = "0.5.1"
-smart-leds = "0.3.0"
-ws281x-rpi = "0.0.1"
+rustfft = "6.1.0"

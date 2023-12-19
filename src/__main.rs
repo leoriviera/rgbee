@@ -15,6 +15,8 @@ use rustfft::{FftPlanner, num_complex::Complex};
 use colour::Colour;
 use quantiser::Quantiser;
 
+use crate::fft::{start_capture, fft};
+
 fn pixel_to_colour(pixel: Rgba<u8>) -> Colour {
     let [red, green, blue, _alpha] = pixel.0;
 
@@ -82,8 +84,9 @@ pub fn morph(start: &Vec<[u8; 4]>, finish: &Vec<[u8; 4]>, steps: usize) -> Vec<V
     }
     morphs
 }
-fn set_lightness(c: &[u8; 4], l: f64) -> [u8; 4] {
-    let hsl = HSL::from_rgb(&[c[0], c[1], c[2]]);
+
+fn set_lightness(p: &[u8; 4], l: f64) -> [u8; 4] {
+    let hsl = HSL::from_rgb(&[p[0], p[1], p[2]]);
 
     let (r, g, b) = HSL {
         l,
@@ -91,6 +94,50 @@ fn set_lightness(c: &[u8; 4], l: f64) -> [u8; 4] {
     }.to_rgb();
 
     [r, g, b, 0]
+}
+
+fn light_loop(controller: &mut Controller, pcm: &PCM, data: &Vec<[u8; 4]>) -> Result<(), alsa::Error> {
+    const NUM_SAMPLES: usize = 8192;
+
+    let io = pcm.io_i16()?;
+
+    let mut start = data.clone();
+    let mut buffer = [0i16; NUM_SAMPLES];
+
+    loop {
+        assert_eq!(io.readi(&mut buffer)?, NUM_SAMPLES);
+
+        // TODO - I predict there may be a problem with the above if audio stops playing
+        // check if this will help if there is an issue
+        // for i in 0..num_samples {
+        //     let sample = io.readi(&mut buffer[i..i + 1]).unwrap();
+        //     if sample == 0 {
+        //         break;
+        //     }
+        // }
+
+        let values = fft(&buffer, data.len());
+
+        let finish = data.iter()
+            .zip(values.iter()).map(|(pixel, brightness)| set_lightness(pixel, *brightness))
+            .collect::<Vec<_>>();
+
+        // TODO - experiment with number of morph steps
+        let transition = morph(&start, &finish, 100);
+
+        for colours in transition.iter() {
+            let leds = controller.leds_mut(0);
+
+            for (i, pixel) in colours.iter().enumerate() {
+                leds[i] = *pixel;
+            }
+
+            controller.render().unwrap();
+            controller.wait().unwrap();
+        }
+
+        start = finish;
+    }
 }
 
 fn main() {
@@ -115,34 +162,11 @@ fn main() {
         )
         .build()
         .unwrap();
+    let pcm = start_capture("default").unwrap();
 
-    let mut data: Vec<[u8; 4]> = generate_pixel_vector(&img, LED_LENGTH);
-    let mut rng = rand::thread_rng();
+    let data: Vec<[u8; 4]> = generate_pixel_vector(&img, LED_LENGTH);
 
-    loop {
-        let finish = data.iter()
-            .map(|pixel| {
-                let brightness = rng.gen();
-                set_lightness(pixel, brightness)
-            })
-            .collect::<Vec<_>>();
-
-        // TODO - experiment with number of morph steps
-        let transition = morph(&data, &finish, 100);
-
-        for colours in transition {
-            let leds = controller.leds_mut(0);
-
-            for (i, pixel) in colours.iter().enumerate() {
-                leds[i] = *pixel;
-            }
-
-            controller.render().unwrap();
-            controller.wait().unwrap();
-        }
-
-        data = finish;
-    }
+    light_loop(&mut controller, &pcm, &data).unwrap();
 
     // let mut img = ImageBuffer::new(LED_LENGTH as u32, 100);
 
