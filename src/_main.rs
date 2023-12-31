@@ -1,16 +1,16 @@
 mod colour;
+mod fft;
 mod node;
 mod quantiser;
-mod fft;
 
 use alsa::pcm::{Access, Format, HwParams, PCM};
 use alsa::{Direction, ValueOr};
 use colorgrad::Color;
 use hsl::HSL;
-use image::{DynamicImage, GenericImageView, Rgba, ImageBuffer};
+use image::{DynamicImage, GenericImageView, ImageBuffer, Rgba};
 use rand::prelude::*;
-use rs_ws281x::{ChannelBuilder, ControllerBuilder, StripType, Controller};
-use rustfft::{FftPlanner, num_complex::Complex};
+use rs_ws281x::{ChannelBuilder, Controller, ControllerBuilder, StripType};
+use rustfft::{num_complex::Complex, FftPlanner};
 
 use colour::Colour;
 use quantiser::Quantiser;
@@ -48,7 +48,11 @@ pub fn generate_pixel_vector(img: &DynamicImage, led_length: usize) -> Vec<[u8; 
         .build()
         .unwrap();
 
-    let mut line = gradient.colors(colour_count).iter().map(|c| c.to_rgba8()).collect::<Vec<_>>();
+    let mut line = gradient
+        .colors(colour_count)
+        .iter()
+        .map(|c| c.to_rgba8())
+        .collect::<Vec<_>>();
 
     line.extend(line.clone().into_iter().rev());
 
@@ -61,7 +65,7 @@ pub fn morph(start: &Vec<[u8; 4]>, finish: &Vec<[u8; 4]>, steps: usize) -> Vec<V
 
     let mut morphs = Vec::with_capacity(steps);
 
-    for _ in 0..steps  {
+    for _ in 0..steps {
         morphs.push(Vec::with_capacity(pixel_count));
     }
 
@@ -69,7 +73,7 @@ pub fn morph(start: &Vec<[u8; 4]>, finish: &Vec<[u8; 4]>, steps: usize) -> Vec<V
         let gradient = colorgrad::CustomGradient::new()
             .colors(&[
                 Color::from_rgba8(pixels.0[0], pixels.0[1], pixels.0[2], pixels.0[3]),
-                Color::from_rgba8(pixels.1[0], pixels.1[1], pixels.1[2], pixels.1[3])
+                Color::from_rgba8(pixels.1[0], pixels.1[1], pixels.1[2], pixels.1[3]),
             ])
             .build()
             .unwrap();
@@ -82,13 +86,11 @@ pub fn morph(start: &Vec<[u8; 4]>, finish: &Vec<[u8; 4]>, steps: usize) -> Vec<V
     }
     morphs
 }
+
 fn set_lightness(c: &[u8; 4], l: f64) -> [u8; 4] {
     let hsl = HSL::from_rgb(&[c[0], c[1], c[2]]);
 
-    let (r, g, b) = HSL {
-        l,
-        ..hsl
-    }.to_rgb();
+    let (r, g, b) = HSL { l, ..hsl }.to_rgb();
 
     [r, g, b, 0]
 }
@@ -120,7 +122,8 @@ fn main() {
     let mut rng = rand::thread_rng();
 
     loop {
-        let finish = data.iter()
+        let finish = data
+            .iter()
             .map(|pixel| {
                 let brightness = rng.gen();
                 set_lightness(pixel, brightness)

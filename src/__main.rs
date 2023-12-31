@@ -1,61 +1,20 @@
 mod colour;
+mod fft;
 mod node;
 mod quantiser;
-mod fft;
 
 use alsa::pcm::{Access, Format, HwParams, PCM};
 use alsa::{Direction, ValueOr};
 use colorgrad::Color;
 use hsl::HSL;
-use image::{DynamicImage, GenericImageView, Rgba, ImageBuffer};
+use image::{DynamicImage, GenericImageView, ImageBuffer, Rgba};
 use rand::prelude::*;
-use rs_ws281x::{ChannelBuilder, ControllerBuilder, StripType, Controller};
-use rustfft::{FftPlanner, num_complex::Complex};
+use rs_ws281x::{ChannelBuilder, Controller, ControllerBuilder, StripType};
+use rustfft::{num_complex::Complex, FftPlanner};
 
 use colour::Colour;
+use fft::{fft, start_capture};
 use quantiser::Quantiser;
-
-use crate::fft::{start_capture, fft};
-
-fn pixel_to_colour(pixel: Rgba<u8>) -> Colour {
-    let [red, green, blue, _alpha] = pixel.0;
-
-    Colour {
-        red: red as usize,
-        green: green as usize,
-        blue: blue as usize,
-    }
-}
-
-pub fn generate_pixel_vector(img: &DynamicImage, led_length: usize) -> Vec<[u8; 4]> {
-    let mut quantiser = Quantiser::default();
-
-    for (_x, _y, pixel) in img.pixels() {
-        // TODO - find out if I need to convert alpha channel
-        let colour = pixel_to_colour(pixel);
-
-        quantiser.add_colour(&colour);
-    }
-
-    let colour_count = led_length / 2;
-    let palette = quantiser.make_palette(led_length * 2);
-
-    let gradient = colorgrad::CustomGradient::new()
-        .colors(
-            &palette
-                .iter()
-                .map(|c| Color::from_rgba8(c.red as u8, c.green as u8, c.blue as u8, 0))
-                .collect::<Vec<_>>(),
-        )
-        .build()
-        .unwrap();
-
-    let mut line = gradient.colors(colour_count).iter().map(|c| c.to_rgba8()).collect::<Vec<_>>();
-
-    line.extend(line.clone().into_iter().rev());
-
-    line
-}
 
 pub fn morph(start: &Vec<[u8; 4]>, finish: &Vec<[u8; 4]>, steps: usize) -> Vec<Vec<[u8; 4]>> {
     let pixel_count = start.len();
@@ -63,7 +22,7 @@ pub fn morph(start: &Vec<[u8; 4]>, finish: &Vec<[u8; 4]>, steps: usize) -> Vec<V
 
     let mut morphs = Vec::with_capacity(steps);
 
-    for _ in 0..steps  {
+    for _ in 0..steps {
         morphs.push(Vec::with_capacity(pixel_count));
     }
 
@@ -71,7 +30,7 @@ pub fn morph(start: &Vec<[u8; 4]>, finish: &Vec<[u8; 4]>, steps: usize) -> Vec<V
         let gradient = colorgrad::CustomGradient::new()
             .colors(&[
                 Color::from_rgba8(pixels.0[0], pixels.0[1], pixels.0[2], pixels.0[3]),
-                Color::from_rgba8(pixels.1[0], pixels.1[1], pixels.1[2], pixels.1[3])
+                Color::from_rgba8(pixels.1[0], pixels.1[1], pixels.1[2], pixels.1[3]),
             ])
             .build()
             .unwrap();
@@ -88,15 +47,16 @@ pub fn morph(start: &Vec<[u8; 4]>, finish: &Vec<[u8; 4]>, steps: usize) -> Vec<V
 fn set_lightness(p: &[u8; 4], l: f64) -> [u8; 4] {
     let hsl = HSL::from_rgb(&[p[0], p[1], p[2]]);
 
-    let (r, g, b) = HSL {
-        l,
-        ..hsl
-    }.to_rgb();
+    let (r, g, b) = HSL { l: l.into(), ..hsl }.to_rgb();
 
     [r, g, b, 0]
 }
 
-fn light_loop(controller: &mut Controller, pcm: &PCM, data: &Vec<[u8; 4]>) -> Result<(), alsa::Error> {
+fn light_loop(
+    controller: &mut Controller,
+    pcm: &PCM,
+    data: &Vec<[u8; 4]>,
+) -> Result<(), alsa::Error> {
     const NUM_SAMPLES: usize = 8192;
 
     let io = pcm.io_i16()?;
@@ -118,8 +78,10 @@ fn light_loop(controller: &mut Controller, pcm: &PCM, data: &Vec<[u8; 4]>) -> Re
 
         let values = fft(&buffer, data.len());
 
-        let finish = data.iter()
-            .zip(values.iter()).map(|(pixel, brightness)| set_lightness(pixel, *brightness))
+        let finish = data
+            .iter()
+            .zip(values.iter())
+            .map(|(pixel, brightness)| set_lightness(pixel, *brightness))
             .collect::<Vec<_>>();
 
         // TODO - experiment with number of morph steps
